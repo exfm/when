@@ -170,7 +170,8 @@ define(function() { "use strict";
 			try {
 				return resolve(callback ? callback(value) : value);
 			} catch(e) {
-				return rejected(e);
+				throw new Error(e);
+				// return rejected(e);
 			}
 		};
 
@@ -352,7 +353,7 @@ define(function() { "use strict";
 				// TODO: Consider silently returning here so that parties who
 				// have a reference to the resolver cannot tell that the promise
 				// has been resolved using try/catch
-				throw new Error("already completed");
+				// throw new Error("already completed");
 			};
 
 			// Notify listeners
