@@ -284,6 +284,14 @@ define(function() { "use strict";
 			return _resolve(rejected(err));
 		};
 
+		resolver.rejectIfError = function promiseRejectIfError(err){
+			if(!err){
+				return false;
+			}
+			resolver.reject(err);
+			return true;
+		};
+
 		/**
 		 * Emits a progress update to all progress observers registered with
 		 * this {@link Deferred}'s {@link Promise}
