@@ -284,7 +284,7 @@ define(function() { "use strict";
 			return _resolve(rejected(err));
 		};
 
-		resolver.rejectIfError = function promiseRejectIfError(err){
+		resolver.rejectIfError = deferred.rejectIfError = function promiseRejectIfError(err){
 			if(!err){
 				return false;
 			}
