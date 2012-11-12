@@ -1,9 +1,12 @@
 (function(buster, when) {
 
-var assert, fail;
+var assert, refute, fail, sentinel;
 
 assert = buster.assert;
+refute = buster.refute;
 fail = buster.assertions.fail;
+
+sentinel = {};
 
 function fakeResolved(val) {
 	return {
@@ -32,7 +35,7 @@ buster.testCase('when.defer', {
 					assert.equals(val, 1);
 				},
 				fail
-			).always(done());
+			).always(done);
 
 			d.resolve(1);
 		},
@@ -185,12 +188,138 @@ buster.testCase('when.defer', {
 				fail,
 				fail,
 				function(val) {
-					assert.equals(val, 1);
+					assert.same(val, sentinel);
+					done();
+				}
+			);
+
+			d.progress(sentinel);
+		},
+
+		'should propagate progress to downstream promises': function(done) {
+			var d = when.defer();
+
+			d.promise
+			.then(fail, fail,
+				function(update) {
+					return update;
+				}
+			)
+			.then(fail, fail,
+				function(update) {
+					assert.same(update, sentinel);
+					done();
+				}
+			);
+
+			d.progress(sentinel);
+		},
+
+		'should propagate transformed progress to downstream promises': function(done) {
+			var d = when.defer();
+
+			d.promise
+			.then(fail, fail,
+				function() {
+					return sentinel;
+				}
+			)
+			.then(fail, fail,
+				function(update) {
+					assert.same(update, sentinel);
 					done();
 				}
 			);
 
 			d.progress(1);
+		},
+
+		'should propagate caught exception value as progress': function(done) {
+			var d = when.defer();
+
+			d.promise
+			.then(fail, fail,
+				function() {
+					throw sentinel;
+				}
+			)
+			.then(fail, fail,
+				function(update) {
+					assert.same(update, sentinel);
+					done();
+				}
+			);
+
+			d.progress(1);
+		},
+
+		'should forward progress events when intermediary callback (tied to a resolved promise) returns a promise': function(done) {
+			var d, d2;
+
+			d = when.defer();
+			d2 = when.defer();
+
+			// resolve d BEFORE calling attaching progress handler
+			d.resolve();
+
+			d.promise.then(
+				function() {
+					return d2.promise;
+				}
+			).then(fail, fail,
+				function(update) {
+					assert.same(update, sentinel);
+					done();
+				}
+			);
+
+			d2.progress(sentinel);
+		},
+
+		'should forward progress events when intermediary callback (tied to an unresovled promise) returns a promise': function(done) {
+			var d, d2;
+
+			d = when.defer();
+			d2 = when.defer();
+
+			d.promise.then(
+				function() {
+					return d2.promise;
+				}
+			).then(fail, fail,
+				function(update) {
+					assert.same(update, sentinel);
+					done();
+				}
+			);
+
+			// resolve d AFTER calling attaching progress handler
+			d.resolve();
+			d2.progress(sentinel);
+		},
+
+		'should forward progress when resolved with another promise': function(done) {
+			var d, d2;
+
+			d = when.defer();
+			d2 = when.defer();
+
+			d.promise
+			.then(fail, fail,
+				function() {
+					return sentinel;
+				}
+			)
+			.then(fail, fail,
+				function(update) {
+					assert.same(update, sentinel);
+					done();
+				}
+			);
+
+			d.resolve(d2.promise);
+
+			d2.progress();
 		},
 
 		'should allow resolve after progress': function(done) {
@@ -242,58 +371,60 @@ buster.testCase('when.defer', {
 		}
 	},
 
-	'should throw if resolved when already resolved': function() {
+	'should return a promise for passed-in resolution value when already resolved': function(done) {
 		var d = when.defer();
 		d.resolve(1);
 
-		assert.exception(function() {
-			d.resolve();
-		});
+		d.resolve(2).then(function(val) {
+			assert.equals(val, 2);
+		}).always(done);
 	},
 
-	'should throw if rejected when already resolved': function() {
+	'should return a promise for passed-in rejection value when already resolved': function(done) {
 		var d = when.defer();
 		d.resolve(1);
 
-		assert.exception(function() {
-			d.reject();
-		});
+		d.reject(2).then(
+			fail,
+			function(val) {
+				assert.equals(val, 2);
+			}
+		).always(done);
 	},
 
-	'should throw on progress when already resolved': function() {
+	'should return silently on progress when already resolved': function() {
 		var d = when.defer();
 		d.resolve(1);
 
-		assert.exception(function() {
-			d.progress();
-		});
+		refute.defined(d.progress());
 	},
 
-	'should throw if resolved when already rejected': function() {
+	'should return a promise for passed-in resolution value when already rejected': function(done) {
 		var d = when.defer();
-		d.resolve(1);
+		d.reject(1);
 
-		assert.exception(function() {
-			d.resolve();
-		});
+		d.resolve(2).then(function(val) {
+			assert.equals(val, 2);
+		}).always(done);
 	},
 
-	'should throw if rejected when already rejected': function() {
+	'should return a promise for passed-in rejection value when already rejected': function(done) {
 		var d = when.defer();
-		d.resolve(1);
+		d.reject(1);
 
-		assert.exception(function() {
-			d.reject();
-		});
+		d.reject(2).then(
+			fail,
+			function(val) {
+				assert.equals(val, 2);
+			}
+		).always(done);
 	},
 
-	'should throw on progress when already rejected': function() {
+	'should return silently on progress when already rejected': function() {
 		var d = when.defer();
-		d.resolve(1);
+		d.reject(1);
 
-		assert.exception(function() {
-			d.progress();
-		});
+		refute.defined(d.progress());
 	}
 
 });

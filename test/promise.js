@@ -17,9 +17,10 @@ isFrozen = Object.isFrozen || function() { return true; };
 
 buster.testCase('promise', {
 
-	'should be frozen': function() {
-		assert(Object.isFrozen(defer().promise));
-	},
+	// TODO: Reinstate when v8 Object.freeze() performance is sane
+//	'should be frozen': function() {
+//		assert(Object.isFrozen(defer().promise));
+//	},
 
 	'should return a promise': function() {
 		assert.isFunction(defer().promise.then().then);
@@ -55,6 +56,23 @@ buster.testCase('promise', {
 		assert.isFunction(defer().promise.then(null, f).then);
 		assert.isFunction(defer().promise.then(null, f, null).then);
 		assert.isFunction(defer().promise.then(null, null, f).then);
+	},
+
+	'should preserve object whose valueOf() differs from original object': function(done) {
+		var d, expected;
+
+		d = when.defer();
+		expected = new Date();
+
+		d.promise.then(
+			function(val) {
+				assert.same(val, expected);
+			},
+			fail
+		).always(done);
+
+		d.resolve(expected);
+
 	},
 
 	'should forward result when callback is null': function(done) {

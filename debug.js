@@ -43,11 +43,11 @@
 (function(define) {
 define(['./when'], function(when) {
 
-	var promiseId, freeze, pending, exceptionsToRethrow, undef;
+	var promiseId, pending, exceptionsToRethrow, own, undef;
 
 	promiseId = 0;
-	freeze = Object.freeze || function(o) { return o; };
 	pending = {};
+	own = Object.prototype.hasOwnProperty;
 
 	exceptionsToRethrow = {
 		RangeError: 1,
@@ -57,100 +57,78 @@ define(['./when'], function(when) {
 	};
 
 	/**
-	 * Setup debug output handlers for the supplied promise.
-	 * @param p {Promise} A trusted (when.js) promise
-	 * @return p
-	 */
-	function debugPromise(p) {
-		// TODO: Need to find a way for promises returned by .then()
-		// to also be debug promises.
-		p.then(
-			undef,
-			function(err) {
-				if(p.id) {
-					console.error(p.toString());
-				} else {
-					console.error('[object Promise] REJECTED:', err);
-				}
-
-				return when.reject(err);
-			}
-		);
-
-		return p;
-	}
-
-	function wrapCallback(cb) {
-		if(typeof cb != 'function') {
-			return cb;
-		}
-
-		return function(v) {
-			try {
-				return cb(v);
-			} catch(err) {
-				if(err) {
-					if (err.name in exceptionsToRethrow) {
-						setTimeout(function() {
-							throw err;
-						}, 0);
-					} else if (err.stack) {
-						console.error(err.stack);
-					}
-				}
-
-				throw err;
-			}
-		};
-	}
-
-	function wrapCallbacks(callbacks) {
-		var cb, args, len, i;
-
-		args = [];
-
-		for(i = 0, len = callbacks.length; i < len; i++) {
-			args[i] = typeof (cb = callbacks[i]) == 'function'
-				? wrapCallback(cb)
-				: cb;
-		}
-
-		return args;
-	}
-
-	/**
-	 * Helper to form debug string for promises depending on their
-	 * current state
-	 * @param name
-	 * @param id
-	 * @param status
-	 * @param value
-	 */
-	function toString(name, id, status, value) {
-		var s = '[object ' + name + ' ' + id + '] ' + status;
-
-		if(value !== pending) {
-			s += ': ' + value;
-		}
-
-		return s;
-	}
-
-	function F() {}
-	function beget(o) {
-		F.prototype = o;
-		o = new F();
-		F.prototype = undef;
-
-		return o;
-	}
-
-	/**
 	 * Replacement for when() that sets up debug logging on the
 	 * returned promise.
 	 */
-	function whenDebug() {
-		return debugPromise(when.apply(null, wrapCallbacks(arguments)));
+	function whenDebug(promise, cb, eb, pb) {
+		var args = [promise].concat(wrapCallbacks(promise, [cb, eb, pb]));
+		return debugPromise(when.apply(null, args), promise);
+	}
+
+	/**
+	 * Setup debug output handlers for the supplied promise.
+	 * @param p {Promise} A trusted (when.js) promise
+	 * @param parent {Promise} promise from which p was created (e.g. via then())
+	 * @return {Promise} a new promise that outputs debug info and
+	 * has a useful toString
+	 */
+	function debugPromise(p, parent) {
+		var id, origThen, newPromise, logReject;
+
+		if(own.call(p, 'parent')) {
+			return p;
+		}
+
+		promiseId++;
+		id = (parent && 'id' in parent) ? (parent.id + '.' + promiseId) : promiseId;
+
+		origThen = p.then;
+		newPromise = beget(p);
+		newPromise.id = id;
+		newPromise.parent = parent;
+
+		newPromise.toString = function() {
+			return toString('Promise', id);
+		};
+
+		newPromise.then = function(cb, eb) {
+			if(typeof eb === 'function') {
+				var promise = newPromise;
+				do {
+					promise.handled = true;
+				} while((promise = promise.parent) && !promise.handled);
+			}
+
+			return debugPromise(origThen.apply(p, wrapCallbacks(newPromise, arguments)), newPromise);
+		};
+
+		logReject = function() {
+			console.error(newPromise.toString());
+		};
+
+		p.then(
+			function(val) {
+				newPromise.toString = function() {
+					return toString('Promise', id, 'resolved', val);
+				};
+				return val;
+			},
+			wrapCallback(newPromise, function(err) {
+				newPromise.toString = function() {
+					return toString('Promise', id, 'REJECTED', err);
+				};
+
+				callGlobalHandler('reject', newPromise, err);
+
+				if(!newPromise.handled) {
+					logReject();
+				}
+
+				throw err;
+			})
+		);
+
+		return newPromise;
 	}
 
 	/**
@@ -161,7 +139,7 @@ define(['./when'], function(when) {
 	 * @return {Deferred} a Deferred with debug logging
 	 */
 	function deferDebug() {
-		var d, status, value, origResolve, origReject, origThen, id;
+		var d, status, value, origResolve, origReject, origProgress, origThen, id;
 
 		// Delegate to create a Deferred;
 		d = when.defer();
@@ -179,20 +157,31 @@ define(['./when'], function(when) {
 		// Promise and resolver are frozen, so have to delegate
 		// in order to setup toString() on promise, resolver,
 		// and deferred
-		d.promise = beget(d.promise);
-		d.promise.toString = function() {
-			return toString('Promise', id, status, value);
-		};
+		origThen = d.promise.then;
+		d.id = id;
+		d.promise = debugPromise(d.promise, d);
 
 		d.resolver = beget(d.resolver);
 		d.resolver.toString = function() {
 			return toString('Resolver', id, status, value);
 		};
 
+		origProgress = d.resolver.progress;
+		d.progress = d.resolver.progress = function(update) {
+			// Notify global debug handler, if set
+			callGlobalHandler('progress', d, update);
+
+			return origProgress(update);
+		};
+
 		origResolve = d.resolver.resolve;
 		d.resolve = d.resolver.resolve = function(val) {
 			value = val;
 			status = 'resolving';
+
+			// Notify global debug handler, if set
+			callGlobalHandler('resolve', d, val);
+
 			return origResolve.apply(undef, arguments);
 		};
 
@@ -213,52 +202,17 @@ define(['./when'], function(when) {
 			function(e) { status = 'REJECTED'; return when.reject(e); }
 		);
 
-		// Experimenting with setting up ways to also debug promises returned
-		// by .then().  Also need to find a way to extend the id in a way that
-		// makes it obvious the returned promise is NOT the original, but is
-		// related to it--it's downstream in the promise chain.
-		origThen = d.promise.then;
-		d.then = d.promise.then = function(cb, eb, pb) {
-
-			var id = d.id + '>' + (++promiseId);
-
-			var p = origThen.apply(null, wrapCallbacks(arguments));
-
-			p.id = id;
-			p = beget(p);
-			p.toString = function() {
-				return toString('Promise', p.id, status, value);
-			};
-			
-			// See below. Not sure if debug promises should be frozen
-			return freeze(p);
-		};
+		d.then = d.promise.then;
 
 		// Add an id to all directly created promises.  It'd be great
 		// to find a way to propagate this id to promise created by .then()
-		d.id = d.promise.id = d.resolver.id = id;
-
-		// Attach debug handlers after the substitute promise
-		// has been setup, so the id can be logged.
-		//debugPromise(d.promise);
-
-		// TODO: Should we still freeze these?
-		// Seems safer for now to err on the side of caution and freeze them,
-		// but it could be useful to all them to be modified during debugging.
-		freeze(d.promise);
-		freeze(d.resolver);
+		d.resolver.id = id;
 
 		return d;
 	}
 
 	whenDebug.defer = deferDebug;
 	whenDebug.isPromise = when.isPromise;
-
-	function makeDebug(name, func) {
-		whenDebug[name] = function() {
-			return debugPromise(func.apply(when, arguments));
-		};
-	}
 
 	// For each method we haven't already replaced, replace it with
 	// one that sets up debug logging on the returned promise
@@ -269,6 +223,100 @@ define(['./when'], function(when) {
 	}
 
 	return whenDebug;
+
+	// Wrap result of when[name] in a debug promise
+	function makeDebug(name, func) {
+		whenDebug[name] = function() {
+			return debugPromise(func.apply(when, arguments));
+		};
+	}
+
+	// Wrap a promise callback to catch exceptions and log or
+	// rethrow as uncatchable
+	function wrapCallback(promise, cb) {
+		return function(v) {
+			try {
+				return cb(v);
+			} catch(err) {
+				if(err) {
+					if (err.name in exceptionsToRethrow) {
+						throwUncatchable(err);
+					}
+
+					callGlobalHandler('reject', promise, err);
+				}
+
+				throw err;
+			}
+		};
+	}
+
+	// Wrap a callback, errback, progressback tuple
+	function wrapCallbacks(promise, callbacks) {
+		var cb, args, len, i;
+
+		args = [];
+
+		for(i = 0, len = callbacks.length; i < len; i++) {
+			args[i] = typeof (cb = callbacks[i]) == 'function'
+				? wrapCallback(promise, cb)
+				: cb;
+		}
+
+		return args;
+	}
+
+	function callGlobalHandler(handler, promise, triggeringValue, auxValue) {
+		var globalHandlers = whenDebug.debug;
+
+		if(!(globalHandlers && typeof globalHandlers[handler] === 'function')) {
+			return;
+		}
+
+		if(arguments.length < 4 && handler == 'reject') {
+			try {
+				throw new Error(promise.toString());
+			} catch(e) {
+				auxValue = e;
+			}
+		}
+
+		try {
+			globalHandlers[handler](promise, triggeringValue, auxValue);
+		} catch(handlerError) {
+			throwUncatchable(new Error('when.js global debug handler threw: ' + String(handlerError)));
+		}
+	}
+
+	// Stringify a promise, deferred, or resolver
+	function toString(name, id, status, value) {
+		var s = '[object ' + name + ' ' + id + ']';
+
+		if(arguments.length > 2) {
+			s += ' ' + status;
+			if(value !== pending) {
+				s += ': ' + value;
+			}
+		}
+
+		return s;
+	}
+
+	function throwUncatchable(err) {
+		setTimeout(function() {
+			throw err;
+		}, 0);
+	}
+
+	// The usual Crockford
+	function F() {}
+	function beget(o) {
+		F.prototype = o;
+		o = new F();
+		F.prototype = undef;
+
+		return o;
+	}
 
 });
 })(typeof define == 'function'

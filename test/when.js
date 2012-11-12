@@ -14,15 +14,18 @@ var fakePromise = new FakePromise();
 // Untrusted, non-Promises/A-compliant promise
 function FakePromise(val) {
 	this.then = function (cb) {
-		if (cb) cb(val);
+		if (cb) {
+			cb(val);
+		}
 		return this;
 	};
 }
 
 buster.testCase('when', {
-	'should be frozen': function() {
-		assert(Object.isFrozen(when));
-	},
+	// TODO: Reinstate for 2.0
+	// 'should be frozen': function() {
+	// 	assert(Object.isFrozen(when));
+	// },
 
 	'should return a promise for a value': function() {
 		var result = when(1);

@@ -1,32 +1,45 @@
 # when.js [![Build Status](https://secure.travis-ci.org/cujojs/when.png)](http://travis-ci.org/cujojs/when)
 
-A lightweight [CommonJS](http://wiki.commonjs.org/wiki/Promises) [Promises/A](http://wiki.commonjs.org/wiki/Promises/A) and `when()` implementation.  It also provides several other useful Promise-related concepts, such as joining and chaining, and has a robust unit test suite.
+When.js is cujojs's lightweight [CommonJS](http://wiki.commonjs.org/wiki/Promises) [Promises/A](http://wiki.commonjs.org/wiki/Promises/A) and `when()` implementation, derived from the async core of [wire.js](https://github.com/cujojs/wire), cujojs's IOC Container.  It also provides several other useful Promise-related concepts, such as joining multiple promises, mapping and reducing collections of promises, timed promises, and has a robust [unit test suite](#running-the-unit-tests).
 
-It's **just over 1k** when compiled with Google Closure (w/advanced optimizations) and gzipped.
+It passes the [Promises/A Test Suite](https://github.com/domenic/promise-tests), is [frighteningly fast](https://github.com/cujojs/promise-perf-tests#test-results), and is **under 1.3k** when compiled with Google Closure (w/advanced optimizations) and gzipped, and has no dependencies.
 
-when.js was derived from the async core of [wire.js](https://github.com/cujojs/wire).
+# What's New?
 
-What's New?
-===========
+### 1.6.1
 
-### 1.4.2
+* Fix for accidental coercion of non-promises. See [#62](https://github.com/cujojs/when/issues/60).
 
-* Fix for IE8 infinite recursion (See [#49](https://github.com/cujojs/when/issues/49))
+### 1.6.0
 
-### 1.4.1
+* New [when.join](when/blob/master/docs/api.md#whenjoin) - Joins 2 or more promises together into a single promise.
+* [when.some](when/blob/master/docs/api.md#whensome) and [when.any](when/blob/master/docs/api.md#whenany) now act like competitive races, and have generally more useful behavior.  [Read the discussion in #60](https://github.com/cujojs/when/issues/60).
+* *Experimental* progress event propagation.  Progress events will propagate through promise chains. [Read the details here](when/blob/master/docs/api.md#progress-events).
+* *Temporarily* removed calls to `Object.freeze`. Promises are no longer frozen due to a horrendous v8 performance penalty.  [Read discussion here](https://groups.google.com/d/topic/cujojs/w_olYqorbsY/discussion).
+	* **IMPORTANT:** Continue to treat promises as if they are frozen, since `freeze()` will be reintroduced once v8 performance improves. 
+* [when/debug](https://github.com/cujojs/when/wiki/when-debug) now allows setting global a debugging callback for rejected promises.
 
-* Code and unit test cleanup and streamlining--no functional changes.
+### 1.5.2
 
-### 1.4.0
+* Integrate @domenic's [Promises/A Test Suite](https://github.com/domenic/promise-tests). Runs via `npm test`.
+* No functional change
 
-* Create a resolved promise: `when.resolve(value)` creates a resolved promise for `value`. See [API docs](when/blob/master/docs/api.md#whenresolve).
-* Resolve/reject return something useful: `deferred.resolve` and `deferred.reject` now return a promise for the fulfilled or rejected value.
-* Resolve a deferred with another promise: `deferred.resolve(promise)` - when `promise` resolves or rejects, so will `deferred`.
+### 1.5.1
+
+* Performance optimization for [when.defer](when/blob/master/docs/api.md#whendefer), up to 1.5x in some cases.
+* [when/debug](https://github.com/cujojs/when/wiki/when-debug) can now log exceptions and rejections in deeper promise chains, in some cases, even when the promises involved aren't when.js promises.
+
+### 1.5.0
+
+* New task execution and concurrency management: [when/sequence](when/blob/master/docs/api.md#whensequence), [when/pipeline](when/blob/master/docs/api.md#whenpipeline), and [when/parallel](when/blob/master/docs/api.md#whenparallel).
+* Performance optimizations for [when.all](when/blob/master/docs/api.md#whenall) and [when.map](when/blob/master/docs/api.md#whenmap), up to 2x in some cases.
+* Options for disabling [paranoid mode](when/blob/master/docs/api.md#paranoid-mode) that provides a significant performance gain in v8 (e.g. Node and Chrome). See this [v8 performance problem with Object.freeze](http://stackoverflow.com/questions/8435080/any-performance-benefit-to-locking-down-javascript-objects) for more info.
+* **Important:** `deferred` and `deferred.resolver` no longer throw when resolved/rejected multiple times.  They will return silently as if the they had succeeded.  This prevents parties to whom *only* the `resolver` has been given from using `try/catch` to determine the state of the associated promise.
+	* For debugging, you can use the [when/debug](https://github.com/cujojs/when/wiki/when-debug) module, which will still throw when a deferred is resolved/rejected multiple times.
 
 [Full Changelog](https://github.com/cujojs/when/wiki/Changelog)
 
-Docs & Examples
-===============
+# Docs & Examples
 
 [API docs](when/blob/master/docs/api.md#api)
 
@@ -67,22 +80,21 @@ Quick Start
 1. `ringo-admin install cujojs/when`
 1. `var when = require('when');`
 
-Running the Unit Tests
-======================
+# Running the Unit Tests
 
-Install [buster.js](http://busterjs.org/)
+## Node
 
-`npm install -g buster`
+Note that when.js includes @domenic's [Promises/A Test Suite](https://github.com/domenic/promise-tests).  Running unit tests in Node will run both when.js's own test suite, and the Promises/A Test Suite.
 
-Run unit tests in Node:
+1. `npm install`
+1. `npm test`
 
-1. `buster test -e node`
+## Browsers
 
-Run unit tests in Browsers (and Node):
-
-1. `buster server` - this will print a url
-2. Point browsers at <buster server url>/capture, e.g. `localhost:1111/capture`
-3. `buster test` or `buster test -e browser`
+1. `npm install`
+1. `npm start` - starts buster server & prints a url
+1. Point browsers at <buster server url>/capture, e.g. `localhost:1111/capture`
+1. `npm run-script test-browser`
 
 References
 ----------
