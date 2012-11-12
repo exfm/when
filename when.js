@@ -179,8 +179,8 @@ define(['module'], function () {
 			try {
 				return resolve(callback ? callback(value) : value);
 			} catch(e) {
-				throw new Error(e);
-				// return rejected(e);
+				console.error(e.stack);
+				return rejected(e);
 			}
 		});
 
@@ -229,25 +229,6 @@ define(['module'], function () {
 		promise = new Promise(then);
 
 		/**
-		 * Rejects this {@link Deferred}'s {@link Promise} with err as the
-		 * reason.
-		 * @memberOf Resolver
-		 * @param err anything
-		 * @return {Promise} a promise for the rejection value
-		 */
-		resolver.reject = deferred.reject = function promiseReject(err) {
-			return _resolve(rejected(err));
-		};
-
-		resolver.rejectIfError = deferred.rejectIfError = function promiseRejectIfError(err){
-			if(!err){
-				return false;
-			}
-			resolver.reject(err);
-			return true;
-		};
-
-		/**
 		 * Emits a progress update to all progress observers registered with
 		 * this {@link Deferred}'s {@link Promise}
 		 * @memberOf Resolver
@@ -260,6 +241,7 @@ define(['module'], function () {
 			then:     then,
 			resolve:  promiseResolve,
 			reject:   promiseReject,
+			rejectIfError: promiseRejectIfError,
 			// TODO: Consider renaming progress() to notify()
 			progress: promiseProgress,
 
@@ -268,7 +250,8 @@ define(['module'], function () {
 			resolver: {
 				resolve:  promiseResolve,
 				reject:   promiseReject,
-				progress: promiseProgress
+				progress: promiseProgress,
+				rejectIfError: promiseRejectIfError
 			}
 		};
 
@@ -372,6 +355,14 @@ define(['module'], function () {
 		 */
 		function promiseReject(err) {
 			return _resolve(rejected(err));
+		}
+
+		function promiseRejectIfError(err){
+			if(!err){
+				return false;
+			}
+			_resolve(rejected(err));
+			return true;
 		}
 
 		/**
